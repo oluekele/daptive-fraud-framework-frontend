@@ -6,7 +6,8 @@ export type TelemetryType =
   | "mouse_move"
   | "mouse_click"
   | "scroll"
-  | "touch_move";
+  | "touch_move"
+  | "idle_activity";
 
 export type StoredEvent = {
   id?: string;

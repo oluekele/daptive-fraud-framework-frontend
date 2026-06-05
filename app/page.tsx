@@ -1,3 +1,4 @@
+
 "use client";
 
 import { FormEvent, MouseEvent, TouchEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -425,6 +426,7 @@ export default function Home() {
         <section className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
           <aside className="space-y-4">
             <AuthCard
+              auth={auth}
               authMode={authMode}
               setAuthMode={setAuthMode}
               email={email}
@@ -432,6 +434,33 @@ export default function Home() {
               password={password}
               setPassword={setPassword}
               onSubmit={submitAuth}
+              onLogout={async () => {
+                if (!auth) return;
+
+                setStatus("Logging out...");
+                try {
+                  await fetch(`${API_URL}/auth/logout`, {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${auth.accessToken}`,
+                      "Content-Type": "application/json",
+                    },
+                  });
+                } catch (error) {
+                  // Even if the backend logout fails, clear local state so UI returns to logged-out mode.
+                }
+
+                await endSession();
+                setAuth(null);
+                setEvents([]);
+                setDataset(null);
+                setSessionHistory([]);
+                setFeatures([]);
+                setRiskScores([]);
+                setRiskResult(null);
+                setAuthMode("login");
+                setStatus("Logged out. Please login to start a new session.");
+              }}
               isSubmitting={isSubmitting}
             />
 
@@ -530,6 +559,7 @@ export default function Home() {
 }
 
 function AuthCard({
+  auth,
   authMode,
   setAuthMode,
   email,
@@ -537,8 +567,10 @@ function AuthCard({
   password,
   setPassword,
   onSubmit,
+  onLogout,
   isSubmitting,
 }: {
+  auth: AuthResponse | null;
   authMode: AuthMode;
   setAuthMode: (mode: AuthMode) => void;
   email: string;
@@ -546,59 +578,85 @@ function AuthCard({
   password: string;
   setPassword: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onLogout: () => Promise<void> | void;
   isSubmitting: boolean;
 }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-4 flex rounded-md bg-slate-100 p-1">
-        {(["login", "register"] as const).map((mode) => (
+      {auth ? (
+        <>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-950">Signed in</h2>
+              <p className="mt-1 text-sm text-slate-600">{auth.user.email}</p>
+            </div>
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+              Active session
+            </span>
+          </div>
+
           <button
-            key={mode}
             type="button"
-            onClick={() => setAuthMode(mode)}
-            className={`h-10 flex-1 rounded-md text-sm font-semibold transition ${authMode === mode ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"
-              }`}
+            onClick={onLogout}
+            disabled={isSubmitting}
+            className="h-11 w-full rounded-md bg-rose-700 px-4 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
-            {mode === "login" ? "Login" : "Register"}
+            {isSubmitting ? "Working..." : "Logout"}
           </button>
-        ))}
-      </div>
+        </>
+      ) : (
+        <>
+          <div className="mb-4 flex rounded-md bg-slate-100 p-1">
+            {(["login", "register"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setAuthMode(mode)}
+                className={`h-10 flex-1 rounded-md text-sm font-semibold transition ${authMode === mode ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}
+                `}
+              >
+                {mode === "login" ? "Login" : "Register"}
+              </button>
+            ))}
+          </div>
 
-      <form onSubmit={onSubmit} className="space-y-3">
-        <label className="block">
-          <span className="text-sm font-medium text-slate-700">Email</span>
-          <input
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className="mt-1 h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none ring-blue-500 transition focus:ring-2"
-            type="email"
-            autoComplete="email"
-          />
-        </label>
+          <form onSubmit={onSubmit} className="space-y-3">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Email</span>
+              <input
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="mt-1 h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none ring-blue-500 transition focus:ring-2"
+                type="email"
+                autoComplete="email"
+              />
+            </label>
 
-        <label className="block">
-          <span className="text-sm font-medium text-slate-700">Password</span>
-          <input
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="mt-1 h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none ring-blue-500 transition focus:ring-2"
-            type="password"
-            autoComplete={authMode === "login" ? "current-password" : "new-password"}
-          />
-        </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Password</span>
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="mt-1 h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none ring-blue-500 transition focus:ring-2"
+                type="password"
+                autoComplete={authMode === "login" ? "current-password" : "new-password"}
+              />
+            </label>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="h-11 w-full rounded-md bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-        >
-          {isSubmitting
-            ? "Working..."
-            : authMode === "login"
-              ? "Create session"
-              : "Register and login"}
-        </button>
-      </form>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-11 w-full rounded-md bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {isSubmitting
+                ? "Working..."
+                : authMode === "login"
+                  ? "Create session"
+                  : "Register and login"}
+            </button>
+          </form>
+        </>
+      )}
     </div>
   );
 }
