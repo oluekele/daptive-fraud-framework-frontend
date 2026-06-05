@@ -9,6 +9,7 @@ export type TelemetryType =
   | "touch_move"
   | "idle_activity";
 
+
 export type StoredEvent = {
   id?: string;
   eventType: TelemetryType;

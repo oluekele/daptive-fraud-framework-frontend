@@ -11,4 +11,5 @@ export const eventStyles: Record<TelemetryType, string> = {
   mouse_click: "bg-rose-500",
   scroll: "bg-amber-500",
   touch_move: "bg-violet-500",
+  idle_activity: "bg-gray-500",
 };
