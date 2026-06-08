@@ -70,6 +70,12 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const inFlightRef = useRef<Partial<Record<TelemetryType, boolean>>>({});
+  const isCapturingRef = useRef(isCapturing);
+
+  useEffect(() => {
+    isCapturingRef.current = isCapturing;
+  }, [isCapturing]);
+
   const bufferedMoveRef = useRef<{
     mouse: { x: number; y: number; width: number; height: number; timestamp: number } | null;
     touch: { x: number; y: number; width: number; height: number; timestamp: number } | null;
@@ -77,13 +83,72 @@ export default function Home() {
   }>({ mouse: null, touch: null, scroll: null });
   const rafSendRef = useRef<number | null>(null);
 
+  // Idle detection / session duration for backend training features
+  const lastActivityRef = useRef<number>(Date.now());
+  const idleIntervalRef = useRef<number | null>(null);
+  const lastScrollRef = useRef<{ scrollTop: number; timestamp: number; scrollHeight: number } | null>(null);
+  const lastMouseMoveRef = useRef<{ x: number; y: number; timestamp: number } | null>(null);
+
+
+
+  const markActivity = () => {
+    lastActivityRef.current = Date.now();
+  };
+
+
   useEffect(() => {
+    if (!auth || !isCapturing) return;
+
+    markActivity();
+
+    const onAnyActivity = () => {
+      if (!isCapturingRef.current) return;
+      lastActivityRef.current = Date.now();
+    };
+
+
+    const onMouseMove = () => onAnyActivity();
+    const onKeyDown = () => onAnyActivity();
+    const onScroll = () => onAnyActivity();
+    const onTouchStart = () => onAnyActivity();
+
+    window.addEventListener("mousemove", onMouseMove, { passive: true });
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+
+    const sendIdleEvent = () => {
+      if (!isCapturingRef.current) return;
+
+      const idleTimeMs = Date.now() - lastActivityRef.current;
+      if (idleTimeMs <= 10_000) return;
+
+      void sendAuthenticatedTelemetry("idle_activity", {
+        durationMs: idleTimeMs,
+        durationSeconds: idleTimeMs / 1000,
+        thresholdMs: 10_000,
+      });
+
+      // prevent spamming idle events every tick: reset so we wait for next inactivity window
+      lastActivityRef.current = Date.now();
+    };
+
+    idleIntervalRef.current = window.setInterval(sendIdleEvent, 5_000);
+
     return () => {
-      if (rafSendRef.current !== null) {
-        window.cancelAnimationFrame(rafSendRef.current);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("touchstart", onTouchStart);
+
+      if (idleIntervalRef.current !== null) {
+        window.clearInterval(idleIntervalRef.current);
+        idleIntervalRef.current = null;
       }
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, isCapturing]);
+
 
   const metrics = useMemo(() => {
     const keyboardEvents = events.filter((event) =>
@@ -860,8 +925,14 @@ function BehaviourFlow({
         onMouseMove={captureMouseMove}
         onMouseDown={captureMouseClick}
         onTouchMove={captureTouchMove}
-        onScroll={(event) => onScroll(event.currentTarget.scrollTop, event.currentTarget.scrollHeight)}
+        onScroll={(event) => {
+          onScroll(event.currentTarget.scrollTop, event.currentTarget.scrollHeight);
+        }}
+
+
+
         className="relative h-[430px] overflow-auto bg-[radial-gradient(circle_at_1px_1px,#cbd5e1_1px,transparent_0)] bg-[length:22px_22px] outline-none"
+
       >
         <div className="min-h-[760px] p-5">
           <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
