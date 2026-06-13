@@ -78,8 +78,11 @@ export function useBehaviorConsole() {
   const [status, setStatus] = useState("Ready to connect to the API.");
   const [isCapturing, setIsCapturing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false); // For auth form submission
+  const [autoPredictRunning, setAutoPredictRunning] = useState(false);
+  const autoPredictTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Refs for managing in-flight requests, buffered movements, and animation frames
+
+
   const lastActivityTimeRef = useRef(Date.now());
   const inFlightRef = useRef<Partial<Record<TelemetryType, boolean>>>({});
   const bufferedMoveRef = useRef<{
@@ -190,6 +193,30 @@ export function useBehaviorConsole() {
       clearTimeout(idleTimerRef.current);
     }
   }, [isCapturing, auth, resetIdleTimer]);
+
+  // Auto-run ML prediction after 30s of telemetry collection.
+  // We only trigger once per capture session.
+  useEffect(() => {
+    if (!isCapturing || !auth) return;
+
+    if (autoPredictTimerRef.current) {
+      clearTimeout(autoPredictTimerRef.current);
+      autoPredictTimerRef.current = null;
+    }
+
+    autoPredictTimerRef.current = setTimeout(() => {
+      if (autoPredictRunning) return;
+      void actions.predictMl();
+    }, 30000);
+
+    return () => {
+      if (autoPredictTimerRef.current) {
+        clearTimeout(autoPredictTimerRef.current);
+        autoPredictTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCapturing, auth]);
 
   /**
    * Enqueues buffered mouse move and scroll events to be sent
@@ -304,12 +331,40 @@ export function useBehaviorConsole() {
       /** Triggers the backend to calculate a risk score based on current features. */
       if (!auth) return;
       try {
-        const res = await request<RiskScore>("/risk/calculate", { method: "POST", authorized: true, body: "{}" });
+        const res = await request<RiskScore>("/risk/calculate", {
+          method: "POST",
+          authorized: true,
+          body: "{}",
+        });
         setRiskResult(res);
-        setRiskScores(prev => [res, ...prev]);
-        if (res.features) setFeatures(prev => [res.features!, ...prev]);
+        setRiskScores((prev) => [res, ...prev]);
+        if (res.features) setFeatures((prev) => [res.features!, ...prev]);
         setStatus(`Risk calculated: ${res.level}`);
-      } catch (e) { setStatus("Risk calculation failed."); }
+      } catch (e) {
+        setStatus("Risk calculation failed.");
+      }
+    },
+    predictMl: async () => {
+      /** Triggers ML fraud prediction for the current session.
+       * Backend will generate features internally via riskService.
+       */
+      if (!auth) return;
+      try {
+        setAutoPredictRunning(true);
+        setStatus("Running ML prediction...");
+        const res = await request<any>("/predict/ml", {
+          method: "POST",
+          authorized: true,
+        });
+        // Keep status visible; prediction result is primarily logged/consumed elsewhere.
+        console.log(res);
+        setStatus(`ML prediction: ${res.mlPrediction} (${res.level})`);
+        return res;
+      } catch (e) {
+        setStatus("ML prediction failed.");
+      } finally {
+        setAutoPredictRunning(false);
+      }
     },
     refreshFeatures: async () => {
       /** Refreshes the list of generated feature sets. */
@@ -349,7 +404,13 @@ export function useBehaviorConsole() {
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => { if (idleTimerRef.current) clearTimeout(idleTimerRef.current); };
+    return () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (autoPredictTimerRef.current) {
+        clearTimeout(autoPredictTimerRef.current);
+        autoPredictTimerRef.current = null;
+      }
+    };
   }, []);
 
   return {
