@@ -65,6 +65,25 @@ export type FeatureSet = {
   createdAt: string;
 };
 
+export type TrainingRecord = {
+  session_id: string;
+  duration_seconds: number | null;
+  mouse_moves: number;
+  mouse_clicks: number;
+  scroll_events: number;
+  keyboard_events: number;
+  avg_mouse_speed: number | null;
+  max_mouse_speed: number | null;
+  avg_scroll_speed: number | null;
+  scroll_direction_changes: number;
+  idle_time_seconds: number;
+  keystrokes_per_second: number | null;
+  mouse_distance: number;
+  click_rate: number | null;
+  event_rate: number | null;
+  risk_label: "legitimate" | "suspicious" | "unknown";
+};
+
 export type RiskScore = {
   id: string;
   sessionId: string;

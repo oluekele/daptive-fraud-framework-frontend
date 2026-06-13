@@ -6,15 +6,19 @@ import Metric from "@/components/Metric";
 import RiskBadge from "@/components/RiskBadge";
 import RiskPanel from "@/components/RiskPanel";
 import FeaturePanel from "@/components/FeaturePanel";
+import MlPredictionPanel from "@/components/MlPredictionPanel";
 import SessionHistoryPanel from "@/components/SessionHistoryPanel";
 import EventTable from "@/components/EventTable";
 import { API_URL, eventStyles } from "@/lib/constants";
 import { login, register } from "@/services/auth.service";
 import {
   calculateRisk,
+  exportTrainingCsv,
   generateFeatures,
   getFeatures,
   getRiskScores,
+  getTrainingSummary,
+  predictSession,
 } from "@/services/risk.service";
 import {
   getDataset,
@@ -30,28 +34,35 @@ import type {
   SessionSummary,
   StoredEvent,
   TelemetryType,
+  TrainingRecord,
 } from "@/types";
 
 type FeatureSummary = {
-  dwellTime: string;
-  flightTime: string;
-  typingSpeed: string;
-  mouseVelocity: string;
-  mouseAcceleration: string;
-  clickFrequency: string;
-  scrollRate: string;
+  duration: string;
+  mouseMoves: string;
+  mouseClicks: string;
+  keyboardEvents: string;
+  avgMouseSpeed: string;
+  maxMouseSpeed: string;
+  scrollEvents: string;
+  avgScrollSpeed: string;
   idleTime: string;
+  keystrokesPerSecond: string;
+  riskLabel: string;
 };
 
 const DEFAULT_FEATURE_SUMMARY: FeatureSummary = {
-  dwellTime: "--",
-  flightTime: "--",
-  typingSpeed: "--",
-  mouseVelocity: "--",
-  mouseAcceleration: "--",
-  clickFrequency: "--",
-  scrollRate: "--",
+  duration: "--",
+  mouseMoves: "--",
+  mouseClicks: "--",
+  keyboardEvents: "--",
+  avgMouseSpeed: "--",
+  maxMouseSpeed: "--",
+  scrollEvents: "--",
+  avgScrollSpeed: "--",
   idleTime: "--",
+  keystrokesPerSecond: "--",
+  riskLabel: "--",
 };
 
 export default function Home() {
@@ -63,8 +74,10 @@ export default function Home() {
   const [dataset, setDataset] = useState<DatasetResponse | null>(null);
   const [sessionHistory, setSessionHistory] = useState<SessionSummary[]>([]);
   const [features, setFeatures] = useState<FeatureSet[]>([]);
+  const [trainingRecord, setTrainingRecord] = useState<TrainingRecord | null>(null);
   const [riskScores, setRiskScores] = useState<RiskScore[]>([]);
   const [riskResult, setRiskResult] = useState<RiskScore | null>(null);
+  const [mlPrediction, setMlPrediction] = useState<import("@/types/ml-prediction").MlPrediction | null>(null);
   const [status, setStatus] = useState("Ready to connect to the API.");
   const [isCapturing, setIsCapturing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -176,20 +189,24 @@ export default function Home() {
   }, [events]);
 
   const featureSummary = useMemo(() => {
-    const latest = features[0];
-    if (!latest) return DEFAULT_FEATURE_SUMMARY;
+    if (trainingRecord) {
+      return {
+        duration: formatMetric(trainingRecord.duration_seconds, "s"),
+        mouseMoves: String(trainingRecord.mouse_moves),
+        mouseClicks: String(trainingRecord.mouse_clicks),
+        keyboardEvents: String(trainingRecord.keyboard_events),
+        avgMouseSpeed: formatMetric(trainingRecord.avg_mouse_speed, "px/s"),
+        maxMouseSpeed: formatMetric(trainingRecord.max_mouse_speed, "px/s"),
+        scrollEvents: String(trainingRecord.scroll_events),
+        avgScrollSpeed: formatMetric(trainingRecord.avg_scroll_speed, "px/s"),
+        idleTime: formatMetric(trainingRecord.idle_time_seconds, "s"),
+        keystrokesPerSecond: formatMetric(trainingRecord.keystrokes_per_second, "keys/s"),
+        riskLabel: trainingRecord.risk_label,
+      };
+    }
 
-    return {
-      dwellTime: formatMetric(latest.avgDwellTime, "ms"),
-      flightTime: formatMetric(latest.avgFlightTime, "ms"),
-      typingSpeed: formatMetric(latest.typingSpeed, "keys/min"),
-      mouseVelocity: formatMetric(latest.avgMouseSpeed, "px/s"),
-      mouseAcceleration: formatMetric(latest.avgMouseAcceleration ?? null, "px/s²"),
-      clickFrequency: formatMetric(latest.clickFrequency ?? null, "clicks/min"),
-      scrollRate: formatMetric(latest.avgScrollRate, "px/s"),
-      idleTime: formatMetric(latest.idleTime ?? null, "ms"),
-    };
-  }, [features]);
+    return DEFAULT_FEATURE_SUMMARY;
+  }, [trainingRecord]);
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -208,6 +225,7 @@ export default function Home() {
       setDataset(null);
       setSessionHistory([]);
       setFeatures([]);
+      setTrainingRecord(null);
       setRiskScores([]);
       setRiskResult(null);
       setIsCapturing(true);
@@ -359,6 +377,17 @@ export default function Home() {
     }
   }
 
+  async function refreshTrainingSummary() {
+    if (!auth) return;
+
+    try {
+      const record = await getTrainingSummary(auth.accessToken);
+      setTrainingRecord(record);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Training summary failed.");
+    }
+  }
+
   async function generateAndLoadFeatures() {
     if (!auth) return;
 
@@ -366,6 +395,7 @@ export default function Home() {
     try {
       const featureSet = await generateFeatures(auth.accessToken);
       setFeatures((current) => [featureSet, ...current]);
+      await refreshTrainingSummary();
       setStatus("Features generated and stored.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Feature generation failed.");
@@ -379,6 +409,7 @@ export default function Home() {
     try {
       const storedFeatures = await getFeatures(auth.accessToken);
       setFeatures(storedFeatures);
+      await refreshTrainingSummary();
       setStatus("Stored features loaded.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Feature retrieval failed.");
@@ -393,6 +424,7 @@ export default function Home() {
       const score = await calculateRisk(auth.accessToken);
       setRiskResult(score);
       setRiskScores((current) => [score, ...current]);
+      await refreshTrainingSummary();
       if (score.features) {
         setFeatures((current) => [score.features as FeatureSet, ...current]);
       }
@@ -410,11 +442,49 @@ export default function Home() {
       const scores = await getRiskScores(auth.accessToken);
       setRiskScores(scores);
       setRiskResult(scores[0] ?? null);
+      await refreshTrainingSummary();
       setStatus("Risk scores loaded.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Risk retrieval failed.");
     }
   }
+
+  async function downloadTrainingCsv() {
+    if (!auth) return;
+
+    setStatus("Preparing CSV export...");
+    try {
+      const csv = await exportTrainingCsv(auth.accessToken);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "training-data.csv";
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setStatus("Training CSV downloaded.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "CSV export failed.");
+    }
+  }
+
+  async function runPrediction() {
+    if (!auth) return;
+
+    setStatus("Running prediction...");
+    try {
+      const prediction = await predictSession(auth.accessToken, auth.sessionId);
+      // Expected ML response shape from backend:
+      // { sessionId, mlPrediction, confidence, probabilities, score, level, predictionId }
+      console.log("predict response:", prediction);
+      setMlPrediction(prediction as import("@/types/ml-prediction").MlPrediction);
+      setStatus(`ML prediction ready: ${prediction.level} (${Number(prediction.confidence) * 100}%).`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Prediction failed.");
+    }
+  }
+
+  console.log('predict: ', status)
 
   async function refreshSessionHistory() {
     if (!auth) return;
@@ -546,10 +616,12 @@ export default function Home() {
               onCalculateRisk={calculateAndLoadRisk}
               onRefreshFeatures={refreshFeatures}
               onRefreshRisk={refreshRiskScores}
+              onExportCsv={downloadTrainingCsv}
+              onPredict={runPrediction}
             />
 
             <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-base font-semibold text-slate-950">Feature summary</h2>
+              <h2 className="text-base font-semibold text-slate-950">ML training summary</h2>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {Object.entries(featureSummary).map(([label, value]) => (
                   <div key={label} className="rounded-md bg-slate-50 p-3">
@@ -616,6 +688,8 @@ export default function Home() {
               <h2 className="text-base font-semibold text-slate-950">Latest risk</h2>
               <RiskBadge risk={riskResult} />
             </div>
+
+            <MlPredictionPanel prediction={mlPrediction} />
           </section>
         </section>
       </div>
@@ -823,6 +897,8 @@ function RiskEngineCard({
   onCalculateRisk,
   onRefreshFeatures,
   onRefreshRisk,
+  onExportCsv,
+  onPredict,
 }: {
   auth: AuthResponse | null;
   riskResult: RiskScore | null;
@@ -830,6 +906,8 @@ function RiskEngineCard({
   onCalculateRisk: () => void;
   onRefreshFeatures: () => void;
   onRefreshRisk: () => void;
+  onExportCsv: () => void;
+  onPredict: () => void;
 }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -868,6 +946,24 @@ function RiskEngineCard({
           className="h-10 rounded-md border border-slate-300 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
         >
           Get risk
+        </button>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onExportCsv}
+          disabled={!auth}
+          className="h-10 rounded-md border border-slate-300 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+        >
+          Export CSV
+        </button>
+        <button
+          type="button"
+          onClick={onPredict}
+          disabled={!auth}
+          className="h-10 rounded-md bg-blue-700 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+        >
+          Predict
         </button>
       </div>
       <RiskBadge risk={riskResult} />

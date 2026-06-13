@@ -196,7 +196,8 @@ The application captures the following user interactions:
 - Retrieve stored features through `GET /features`
 - Calculate risk through `POST /risk/calculate`
 - Retrieve risk history through `GET /risk`
-- Display latest risk level and score in the sidebar
+- Fetch the ML-ready training summary through `GET /features/training-summary`
+- Display the latest training metrics, including mouse movement, scroll, idle, and risk-label summary in the dashboard
 
 ## User Interface Components
 
