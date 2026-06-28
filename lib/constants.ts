@@ -1,8 +1,8 @@
 import { TelemetryType } from "@/types/telemetry";
 
 export const API_URL =
-  "https://daptive-fraud-framework-backend.onrender.com";
-// "http://localhost:4000";
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
+  "http://localhost:4000";
 
 export const eventStyles: Record<TelemetryType, string> = {
   keydown: "bg-emerald-500",

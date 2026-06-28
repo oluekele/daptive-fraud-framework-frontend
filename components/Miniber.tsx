@@ -3,7 +3,6 @@ type Props = {
   value: number;
 };
 
-//year
 export default function MiniBar({ label, value }: Props) {
   return (
     <div>
