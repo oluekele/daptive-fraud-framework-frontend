@@ -98,16 +98,16 @@ export function exportTrainingCsv(token: string, onlyLabeled = false) {
 /**
  * Run a prediction for the current session through the backend risk pipeline
  */
-export function predictSession(token: string, sessionId?: string) {
-  // Backend expects POST /predict/ml and does NOT require sending the feature vector.
+export function predictSession(token: string) {
+  // Backend expects POST /predict/ml and uses the active session from JWT.
+  // No request body is required.
   return apiRequest<Record<string, unknown>>(
     "/predict/ml",
     token,
     {
       method: "POST",
-      // sessionId is ignored by the backend endpoint implementation.
-      body: JSON.stringify({ sessionId }),
     }
   );
 }
+
 
