@@ -101,13 +101,10 @@ export function exportTrainingCsv(token: string, onlyLabeled = false) {
 export function predictSession(token: string) {
   // Backend expects POST /predict/ml and uses the active session from JWT.
   // No request body is required.
-  return apiRequest<Record<string, unknown>>(
-    "/predict/ml",
-    token,
-    {
-      method: "POST",
-    }
-  );
+  return apiRequest<Record<string, unknown>>("/predict/ml", token, {
+    method: "POST",
+  });
 }
+
 
 
