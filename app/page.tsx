@@ -473,7 +473,7 @@ export default function Home() {
 
     setStatus("Running prediction...");
     try {
-      const prediction = await predictSession(auth.accessToken, auth.sessionId);
+      const prediction = await predictSession(auth.accessToken);
       // Expected ML response shape from backend:
       // { sessionId, mlPrediction, confidence, probabilities, score, level, predictionId }
       console.log("predict response:", prediction);
